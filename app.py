@@ -1,75 +1,82 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
 # Configuração da página
-st.set_page_config(page_title="Gestão Financeira Bia & Lu", layout="wide")
+st.set_page_config(page_title="Finanças Bia & Lu", layout="wide")
 
-# --- MENU LATERAL ---
-st.sidebar.title("Navegação")
-menu = st.sidebar.radio("Ir para:", ["CADASTRAR DESPESAS", "CADASTRAR ENTRADAS", "RELATÓRIO MENSAL", "CONTROLE GERAL"])
+# --- CONEXÃO COM O GOOGLE SHEETS ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNÇÃO DE LOGIN (Simples para uso próprio) ---
+# --- LOGIN ---
 if "logado" not in st.session_state:
     st.session_state.logado = False
 
 if not st.session_state.logado:
-    st.title("Acesso Restrito")
+    st.title("🔒 Acesso Restrito")
     user = st.text_input("Usuário")
     senha = st.text_input("Senha", type="password")
     if st.button("Entrar"):
-        if (user.lower() in ["bia", "lu"]) and senha == "1234": # Escolha sua senha
+        if (user.lower() in ["bia", "lu"]) and senha == "1234": # Altere sua senha aqui
             st.session_state.logado = True
             st.rerun()
         else:
-            st.error("Usuário ou senha inválidos")
+            st.error("Usuário ou senha incorretos")
 else:
+    # --- MENU LATERAL ---
+    menu = st.sidebar.radio("Navegação", ["CADASTRAR DESPESAS", "CADASTRAR ENTRADAS", "RELATÓRIO MENSAL", "CONTROLE GERAL"])
+
     # --- TELA: CADASTRAR DESPESAS ---
     if menu == "CADASTRAR DESPESAS":
-        st.title("💸 Cadastrar Despesas")
-        with st.form("form_despesa", clear_on_submit=True):
+        st.header("💸 Lançar Despesa")
+        with st.form("form_despesas", clear_on_submit=True):
             data = st.date_input("Data", datetime.now())
             tipo = st.selectbox("Tipo", ["FIXAS", "SAÚDE", "ESTUDOS", "VESTUÁRIO", "ACESSÓRIOS", "DIVERSOS", "LAZER", "PRESENTES", "INVESTIMENTOS"])
             desc = st.text_input("Descrição")
-            valor = st.number_input("Valor Total", min_value=0.0)
-            parc = st.number_input("Qtd Parcelas", min_value=1, value=1)
+            valor_total = st.number_input("Valor Total", min_value=0.0, step=0.01)
+            parcelas = st.number_input("Quantidade de Parcelas", min_value=1, value=1)
             pagamento = st.selectbox("Pagamento", ["CARTÃO CONJUNTA", "CARTÃO BIA", "CARTÃO LU", "DINHEIRO BIA", "DINHEIRO LU"])
             
-            valor_parc = valor / parc
-            st.write(f"Valor da Parcela: R$ {valor_parc:.2f}")
+            valor_parcela = valor_total / parcelas
+            st.info(f"Valor da Parcela: R$ {valor_parcela:.2f}")
             
             if st.form_submit_button("Cadastrar"):
-                st.success("Despesa salva com sucesso!") # Aqui conectaremos a gravação depois
+                nova_linha = pd.DataFrame([{
+                    "Data": data.strftime('%d/%m/%Y'), "Tipo": tipo, "Descricao": desc,
+                    "Valor_Total": valor_total, "Parcelas": parcelas, 
+                    "Valor_Parcela": valor_parcela, "Pagamento": pagamento
+                }])
+                # Adiciona na aba 'Despesas' da sua planilha
+                existing_data = conn.read(worksheet="Despesas")
+                updated_df = pd.concat([existing_data, nova_linha], ignore_index=True)
+                conn.update(worksheet="Despesas", data=updated_df)
+                st.success("Despesa cadastrada!")
 
     # --- TELA: CADASTRAR ENTRADAS ---
     elif menu == "CADASTRAR ENTRADAS":
-        st.title("💰 Cadastrar Entradas")
-        with st.form("form_entrada", clear_on_submit=True):
+        st.header("💰 Lançar Entrada")
+        with st.form("form_entradas", clear_on_submit=True):
             data_e = st.date_input("Data", datetime.now())
             tipo_e = st.selectbox("Tipo", ["Serviço principal", "Trabalho Extra", "Presente"])
             nome_e = st.selectbox("Nome", ["Bianca", "Lucas"])
             desc_e = st.text_input("Descrição")
-            valor_e = st.number_input("Valor", min_value=0.0)
+            valor_e = st.number_input("Valor", min_value=0.0, step=0.01)
             
             if st.form_submit_button("Cadastrar Entrada"):
-                st.success("Entrada salva!")
+                nova_entrada = pd.DataFrame([{
+                    "Data": data_e.strftime('%d/%m/%Y'), "Tipo": tipo_e, 
+                    "Nome": nome_e, "Descricao": desc_e, "Valor": valor_e
+                }])
+                existing_entradas = conn.read(worksheet="Entradas")
+                updated_ent = pd.concat([existing_entradas, nova_entrada], ignore_index=True)
+                conn.update(worksheet="Entradas", data=updated_ent)
+                st.success(f"Entrada de {nome_e} salva!")
 
     # --- TELA: RELATÓRIO MENSAL ---
     elif menu == "RELATÓRIO MENSAL":
-        st.title("📊 Relatório Mensal")
-        mes_ref = st.selectbox("Selecione o Mês", ["JANEIRO/2026", "FEVEREIRO/2026", "MARÇO/2026"]) # Isso será automático depois
-        
-        # Simulação da visualização da sua imagem
-        st.subheader(f"Resumo de {mes_ref}")
-        col1, col2 = st.columns(2)
-        col1.metric("Total Despesas", "R$ 8.940,58")
-        col2.metric("Total Entradas", "R$ 10.500,00")
-        
-        st.markdown("---")
-        st.write("### Detalhamento (Igual à sua foto)")
-        # Aqui o código vai filtrar a planilha e mostrar a tabela formatada
-
-    # --- TELA: CONTROLE GERAL ---
-    elif menu == "CONTROLE GERAL":
-        st.title("📈 Controle Geral")
-        st.write("Visão anual e gráficos de gastos por categoria.")
+        st.header("📊 Relatórios")
+        # Aqui ele lê a planilha para mostrar o que já foi cadastrado
+        df_despesas = conn.read(worksheet="Despesas")
+        st.write("### Suas Despesas Lançadas")
+        st.dataframe(df_despesas)
