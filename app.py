@@ -3,39 +3,37 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# 1. CONFIGURAÇÃO DA PÁGINA E ÍCONE
+# 1. CONFIGURAÇÃO DA PÁGINA
 st.set_page_config(page_title="Finanças Bia & Lu", page_icon="💰", layout="centered")
 
-# 2. ESTILIZAÇÃO CSS (Deixando o app bonito)
+# 2. ESTILIZAÇÃO CSS
 st.markdown("""
     <style>
-    /* Fonte e fundo */
-    html, body, [class*="css"] {
-        font-family: 'Segoe UI', sans-serif;
-    }
-    /* Botões do Menu Principal */
+    html, body, [class*="css"] { font-family: 'Segoe UI', sans-serif; }
     div.stButton > button {
-        background-color: #99ff33; /* Verde da sua planilha */
-        color: black;
-        font-weight: bold;
-        height: 5em;
-        border-radius: 15px;
-        border: 2px solid #7ecc29;
-        margin-bottom: 10px;
+        background-color: #99ff33; color: black; font-weight: bold;
+        height: 5em; border-radius: 15px; border: 2px solid #7ecc29; margin-bottom: 10px;
     }
-    /* Botão Voltar */
-    .stSidebar .stButton > button {
-        background-color: #f0f2f6;
-        height: 3em;
-        color: #31333F;
-    }
+    .stSidebar .stButton > button { background-color: #f0f2f6; height: 3em; color: #31333F; }
     </style>
     """, unsafe_allow_html=True)
 
 # 3. CONEXÃO COM O GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 4. CONTROLE DE ESTADO (LOGIN E TELAS)
+# --- FUNÇÃO AUXILIAR PARA LER DADOS COM SEGURANÇA ---
+def ler_dados(aba):
+    try:
+        # Tenta ler a aba específica
+        return conn.read(worksheet=aba, ttl=0)
+    except Exception as e:
+        # Se der erro (como o HTTPError), retorna um DataFrame vazio com as colunas certas
+        if aba == "Despesas":
+            return pd.DataFrame(columns=["Data", "Tipo", "Descricao", "Valor_Total", "Parcelas", "Valor_Parcela", "Pagamento"])
+        else:
+            return pd.DataFrame(columns=["Data", "Tipo", "Nome", "Descricao", "Valor"])
+
+# 4. CONTROLE DE ESTADO
 if "logado" not in st.session_state:
     st.session_state.logado = False
 if "tela" not in st.session_state:
@@ -53,34 +51,24 @@ if not st.session_state.logado:
         else:
             st.error("Usuário ou senha inválidos")
 else:
-    # --- INTERFACE APÓS LOGIN ---
-
     # Menu Principal
     if st.session_state.tela == "MENU":
         st.title("🏠 Menu Principal")
-        st.write("Escolha uma opção para continuar:")
-        
         col1, col2 = st.columns(2)
         with col1:
             if st.button("➕ CADASTRAR\nDESPESAS", use_container_width=True):
-                st.session_state.tela = "DESPESAS"
-                st.rerun()
+                st.session_state.tela = "DESPESAS"; st.rerun()
             if st.button("📊 RELATÓRIO\nMENSAL", use_container_width=True):
-                st.session_state.tela = "RELATORIO"
-                st.rerun()
+                st.session_state.tela = "RELATORIO"; st.rerun()
         with col2:
             if st.button("💰 CADASTRAR\nENTRADAS", use_container_width=True):
-                st.session_state.tela = "ENTRADAS"
-                st.rerun()
+                st.session_state.tela = "ENTRADAS"; st.rerun()
             if st.button("📈 CONTROLE\nGERAL", use_container_width=True):
-                st.session_state.tela = "CONTROLE"
-                st.rerun()
+                st.session_state.tela = "CONTROLE"; st.rerun()
 
-    # Botão de Voltar (Sidebar)
     if st.session_state.tela != "MENU":
         if st.sidebar.button("⬅️ VOLTAR AO MENU"):
-            st.session_state.tela = "MENU"
-            st.rerun()
+            st.session_state.tela = "MENU"; st.rerun()
 
     # --- TELA: DESPESAS ---
     if st.session_state.tela == "DESPESAS":
@@ -92,17 +80,15 @@ else:
             valor_total = st.number_input("Valor Total", min_value=0.0, step=0.01)
             parc = st.number_input("Qtd Parcelas", min_value=1, value=1)
             pag = st.selectbox("Pagamento", ["CARTÃO CONJUNTA", "CARTÃO BIA", "CARTÃO LU", "DINHEIRO BIA", "DINHEIRO LU"])
-            
             v_parc = valor_total / parc
             st.info(f"Valor da Parcela: R$ {v_parc:.2f}")
 
             if st.form_submit_button("SALVAR DESPESA"):
                 nova_d = pd.DataFrame([{
                     "Data": data.strftime('%d/%m/%Y'), "Tipo": tipo, "Descricao": desc,
-                    "Valor_Total": valor_total, "Parcelas": parc, 
-                    "Valor_Parcela": v_parc, "Pagamento": pag
+                    "Valor_Total": valor_total, "Parcelas": parc, "Valor_Parcela": v_parc, "Pagamento": pag
                 }])
-                df_atual = conn.read(worksheet="Despesas")
+                df_atual = ler_dados("Despesas") # Usa a função de leitura segura
                 df_final = pd.concat([df_atual, nova_d], ignore_index=True)
                 conn.update(worksheet="Despesas", data=df_final)
                 st.success("Lançado com sucesso!")
@@ -119,10 +105,9 @@ else:
 
             if st.form_submit_button("SALVAR ENTRADA"):
                 nova_e = pd.DataFrame([{
-                    "Data": data_e.strftime('%d/%m/%Y'), "Tipo": tipo_e, 
-                    "Nome": nome_e, "Descricao": desc_e, "Valor": valor_e
+                    "Data": data_e.strftime('%d/%m/%Y'), "Tipo": tipo_e, "Nome": nome_e, "Descricao": desc_e, "Valor": valor_e
                 }])
-                df_e_atual = conn.read(worksheet="Entradas")
+                df_e_atual = ler_dados("Entradas") # Usa a função de leitura segura
                 df_e_final = pd.concat([df_e_atual, nova_e], ignore_index=True)
                 conn.update(worksheet="Entradas", data=df_e_final)
                 st.success("Entrada registrada!")
@@ -130,6 +115,5 @@ else:
     # --- TELA: RELATÓRIO ---
     elif st.session_state.tela == "RELATORIO":
         st.header("📊 Relatório Mensal")
-        st.write("Aqui estão seus lançamentos:")
-        df_ver = conn.read(worksheet="Despesas")
+        df_ver = ler_dados("Despesas")
         st.dataframe(df_ver)
